@@ -518,7 +518,11 @@ function report() {
     <div class="sectors">${per.map(p => `<div class="sector"><div class="ch">${p.ch}</div><div class="nm">${p.name}</div><div class="sc">${p.got}<small> / ${p.of}</small></div></div>`).join("")}</div>
     <p class="lead">${clean === TOTAL ? "Perfect run. You're ready for the test." : `Your best review spot before the test: <b>${weakest.name}</b> (${weakest.ch}). Fly again for a new set of questions.`}</p>
     <p class="stamp">Mission #${st.flown} · Completed ${when}${mins ? ` · ${mins} min` : ""} · Best: ${st.best} / ${TOTAL}</p>
-    <div class="row"><button class="btn" id="again">Fly a new mission</button></div>`;
+    <div class="row"><button class="btn" id="again">Fly a new mission</button><button class="btn ghost" id="home">Back to home</button></div>`;
+  $("home").onclick = () => {
+    st.picks = null; st.i = 0; st.first = []; st.started = null; st.done = null;
+    save(); startScreen(); window.scrollTo({ top: 0 });
+  };
   $("again").onclick = () => {
     st.picks = drawMission(); st.i = 0; st.first = []; st.started = Date.now(); st.done = null;
     save(); showQ();
