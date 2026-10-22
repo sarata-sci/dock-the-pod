@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dock the Pod</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;700;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: a solo docking-console. HUD strip with a pod-to-station flight track on top, one transmission card at a time below. Single dark look on purpose: it reads as a control room on any screen. */
+:root {
+  --space: #0b1530;
+  --panel: #15234b;
+  --panel-2: #1c2d5e;
+  --line: #2f4486;
+  --fg: #eef2ff;
+  --muted: #a6b3dd;
+  --signal: #ffb547;
+  --go: #4fd69c;
+  --stop: #ff8080;
+  --cool: #86b6ff;
+  --display: "Oxanium", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--space); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.5; }
+#stars { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.wrap { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding-inline: 16px; padding-block: 18px 40px; display: flex; flex-direction: column; gap: 16px; }
+
+button { font: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--go); outline-offset: 2px; }
+.btn { font-family: var(--display); font-weight: 700; letter-spacing: .04em; border: 1px solid var(--signal); background: var(--signal); color: #1a1205; padding: 12px 22px; border-radius: 6px; font-size: 18px; }
+.btn.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+
+.eyebrow { font-family: var(--display); font-size: 13px; letter-spacing: .18em; text-transform: uppercase; color: var(--signal); }
+
+/* HUD */
+.hud { background: rgba(21,35,75,.85); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.hud-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-family: var(--display); font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.hud-row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.flight { width: 100%; height: 64px; display: block; }
+
+/* Card */
+.card { background: rgba(21,35,75,.92); border: 1px solid var(--line); border-radius: 10px; padding: clamp(18px, 4vw, 32px); display: flex; flex-direction: column; gap: 18px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(34px, 7vw, 56px); line-height: 1; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 700; font-size: clamp(22px, 4vw, 30px); margin: 0; text-wrap: balance; }
+.lead { font-size: 19px; margin: 0; max-width: 60ch; }
+.muted { color: var(--muted); }
+.sector-banner { display: flex; flex-direction: column; gap: 2px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.sector-banner .nm { font-family: var(--display); font-weight: 700; font-size: clamp(20px, 3.5vw, 26px); }
+.transmission { border-left: 3px solid var(--cool); padding: 4px 0 4px 14px; color: var(--cool); font-style: italic; margin: 0; max-width: 62ch; }
+.transmission::before { content: "INCOMING · "; font-family: var(--display); font-style: normal; font-size: 12px; letter-spacing: .16em; }
+.q { font-size: clamp(20px, 3vw, 25px); line-height: 1.4; margin: 0; max-width: 50ch; }
+.q strong { color: var(--signal); }
+
+.opts { display: grid; gap: 10px; }
+.opt { text-align: left; background: var(--panel-2); border: 2px solid var(--line); color: var(--fg); border-radius: 8px; padding: 14px 16px; font-size: 18px; display: flex; gap: 12px; align-items: baseline; transition: border-color .12s, background .12s; }
+.opt:hover:not(:disabled) { border-color: var(--signal); }
+.opt b { font-family: var(--display); color: var(--signal); }
+.opt.right { border-color: var(--go); background: rgba(79,214,156,.15); }
+.opt.wrong { border-color: var(--stop); background: rgba(255,128,128,.1); }
+.opt:disabled { cursor: default; }
+.opt.wrong:disabled { opacity: .55; }
+
+.feedback { border-radius: 6px; padding: 12px 16px; font-size: 18px; }
+.feedback .lbl { font-family: var(--display); font-size: 13px; letter-spacing: .16em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+.feedback.good { background: rgba(79,214,156,.1); border-left: 4px solid var(--go); }
+.feedback.good .lbl { color: var(--go); }
+.feedback.hint { background: rgba(255,128,128,.08); border-left: 4px solid var(--stop); }
+.feedback.hint .lbl { color: var(--stop); }
+
+/* Diagram */
+.diagram { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--space); }
+.diagram table { width: 100%; border-collapse: collapse; min-width: 480px; font-variant-numeric: tabular-nums; }
+.diagram th { font-family: var(--display); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 10px; text-align: left; background: var(--panel-2); }
+.diagram td { padding: 10px; border-top: 1px solid var(--line); vertical-align: middle; }
+.obj { font-weight: 700; }
+.obj small { display: block; color: var(--muted); font-weight: 400; font-size: 14px; }
+.vel { display: flex; flex-direction: column; gap: 4px; }
+.track { position: relative; height: 16px; background: var(--panel); border-radius: 8px; }
+.track::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--line); }
+.bar { position: absolute; top: 3px; height: 10px; background: var(--signal); border-radius: 5px; }
+.bar.neg { background: var(--cool); }
+.legend { color: var(--muted); font-size: 14px; padding: 8px 10px; border-top: 1px solid var(--line); }
+
+/* Start + report */
+.field { display: flex; flex-direction: column; gap: 6px; max-width: 360px; }
+.field label { font-family: var(--display); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.field input { font: inherit; font-size: 19px; background: var(--space); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.callsign { font-family: var(--display); font-weight: 800; font-size: clamp(24px, 4vw, 32px); color: var(--signal); letter-spacing: .03em; }
+.sectors { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.sector { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel-2); }
+.sector .ch { font-family: var(--display); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+.sector .nm { font-weight: 700; }
+.sector .sc { font-family: var(--display); font-weight: 800; font-size: 28px; font-variant-numeric: tabular-nums; }
+.sector .sc small { font-size: 15px; color: var(--muted); font-weight: 500; }
+.big-score { font-family: var(--display); font-weight: 800; font-size: clamp(48px, 10vw, 80px); line-height: 1; color: var(--go); font-variant-numeric: tabular-nums; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.stamp { font-family: var(--display); font-size: 14px; color: var(--muted); letter-spacing: .06em; }
+
+@media (prefers-reduced-motion: reduce) { .opt { transition: none; } }
+</style>
+</head>
+<body>
+
+<canvas id="stars" aria-hidden="true"></canvas>
+
+<div class="wrap">
+  <section class="hud" id="hud" hidden aria-label="Mission status">
+    <div class="hud-row">
+      <span id="hudSector">Sector</span>
+      <span>Signal <b id="hudStep">1 / 16</b></span>
+      <span>Clean docks <b id="hudScore">0</b></span>
+    </div>
+    <svg class="flight" viewBox="0 0 800 64" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="30" y1="32" x2="700" y2="32" stroke="var(--line)" stroke-width="2" stroke-dasharray="6 8"/>
+      <g id="ticks"></g>
+      <g transform="translate(730 32)">
+        <rect x="-8" y="-26" width="16" height="52" rx="3" fill="var(--panel-2)" stroke="var(--muted)" stroke-width="2"/>
+        <rect x="8" y="-6" width="52" height="12" fill="var(--panel-2)" stroke="var(--muted)" stroke-width="2"/>
+        <rect x="-60" y="-6" width="52" height="12" fill="var(--panel-2)" stroke="var(--muted)" stroke-width="2"/>
+        <circle r="5" fill="var(--go)"/>
+      </g>
+      <g id="pod" transform="translate(30 32)">
+        <path d="M-14 -9 L10 -9 L18 0 L10 9 L-14 9 Z" fill="var(--signal)"/>
+        <rect x="-20" y="-5" width="6" height="10" fill="var(--cool)"/>
+      </g>
+    </svg>
+  </section>
+
+  <main class="card" id="screen" aria-live="polite"></main>
+</div>
+
+<script>
+const SECTORS = [
+  { ch: "Chapter 1", name: "Force & Velocity", intro: "Show mission control you know how forces change a pod's motion." },
+  { ch: "Chapter 2", name: "Mass & Velocity", intro: "Cargo changes everything. Show you know how mass affects a pod's motion." },
+  { ch: "Chapter 3", name: "Collisions", intro: "Bumps happen during docking. Show you know what happens when objects collide." },
+  { ch: "Test prep", name: "Read the Data", intro: "Read the sensor data the same way you will on your test." }
+];
+const PER_SECTOR = 4;
+
+// Question bank: 10 per sector. Each mission draws PER_SECTOR from each.
+const BANK = [
+  [ // ---------- Chapter 1: Force & Velocity ----------
+    { t: "Pod motion check.",
+      q: "What can a force do to an object's motion?",
+      opts: ["Only speed it up", "Change its velocity: speed it up, slow it down, or change its direction", "Only stop it", "Nothing, if the object is already moving"],
+      ans: 1, hint: "Think of every way a moving pod can change: faster, slower, turning around.",
+      why: "A force is needed to change velocity, and it can change speed, direction, or both." },
+    { t: "Two pods are on your radar. Both show the same number on the speed display.",
+      q: "Pod A moves <strong>20 m/s toward</strong> the station. Pod B moves <strong>20 m/s away</strong> from it. Do they have the same velocity?",
+      opts: ["Yes, they are going the same speed", "No, their directions are different", "Yes, because they have the same mass", "No, because one is going faster"],
+      ans: 1, hint: "Velocity has two parts. Speed is only one of them.",
+      why: "Velocity is speed <b>and</b> direction. Same speed in opposite directions means different velocities." },
+    { t: "Thruster test. Two identical pods are parked in the bay.",
+      q: "Pod A gets a <strong>gentle</strong> thruster burst. Pod B gets a <strong>strong</strong> one. Which pod has the greater change in velocity?",
+      opts: ["Pod A", "Pod B", "They change the same amount", "There's no way to tell"],
+      ans: 1, hint: "The pods have the same mass. What is different about the pushes?",
+      why: "With the same mass, a stronger force causes a greater change in velocity." },
+    { t: "A supply crate drifted into the station wall and bounced off.",
+      q: "The crate hit the wall at <strong>6 m/s</strong> and bounced straight back at <strong>−4 m/s</strong>. How much did its velocity change?",
+      opts: ["2 m/s", "4 m/s", "6 m/s", "10 m/s"],
+      ans: 3, hint: "Count the slowing down to 0 first, then the speeding up in the other direction.",
+      why: "6 m/s down to 0 is 6 m/s of change. 0 up to −4 is 4 more. 6 + 4 = 10 m/s." },
+    { t: "Vocabulary check from the training manual.",
+      q: "What is a <strong>force</strong>?",
+      opts: ["The amount of matter in an object", "A push or a pull on an object", "How fast an object moves", "The direction an object moves"],
+      ans: 1, hint: "Thrusters do this to a pod.",
+      why: "A force is a push or a pull. Forces are what change an object's velocity." },
+    { t: "Vocabulary check from the training manual.",
+      q: "What is <strong>velocity</strong>?",
+      opts: ["How fast an object moves", "The speed and direction an object moves", "A push or a pull", "The amount of matter in an object"],
+      ans: 1, hint: "It's like speed, but with one more piece of information.",
+      why: "Velocity is speed <b>and</b> direction, like 8 m/s toward the station." },
+    { t: "The navigation screen shows a pod's velocity as <strong>−5 m/s</strong>.",
+      q: "What does the <strong>negative</strong> sign tell you about the pod?",
+      opts: ["It is slowing down", "It is not moving", "It is moving in the opposite direction", "It has less mass"],
+      ans: 2, hint: "Positive and negative show something about the pod's motion, not its speed.",
+      why: "The negative sign shows direction. The pod is moving the opposite way from objects with positive velocity." },
+    { t: "A pod is gliding toward the station too fast. You need to slow it down.",
+      q: "Which way should the thrusters push to slow the pod down?",
+      opts: ["The same direction the pod is moving", "The opposite direction the pod is moving", "Straight up", "It doesn't matter which way"],
+      ans: 1, hint: "Pushing in the same direction would speed it up.",
+      why: "A force in the opposite direction of motion slows an object down." },
+    { t: "A pod is moving at 5 m/s toward the station.",
+      q: "Its thrusters push in the <strong>same direction</strong> the pod is moving. What happens to the pod?",
+      opts: ["It speeds up", "It slows down", "It stops", "It turns around"],
+      ans: 0, hint: "The push is going the same way the pod is already going.",
+      why: "A force in the same direction as an object's motion makes it speed up." },
+    { t: "A parked pod is floating perfectly still in the docking bay.",
+      q: "If <strong>no force</strong> acts on the parked pod, what will happen to its velocity?",
+      opts: ["It will slowly start moving", "It will stay at 0 m/s", "It will drift toward the station", "It will speed up over time"],
+      ans: 1, hint: "What is needed to change an object's velocity?",
+      why: "A force is needed to change velocity. With no force, the pod stays still." }
+  ],
+  [ // ---------- Chapter 2: Mass & Velocity ----------
+    { t: "Cargo check. The station logs every pod's mass before it docks.",
+      q: "What is <strong>mass</strong>?",
+      opts: ["How fast an object moves", "The amount of matter in an object", "A push or a pull", "The direction an object moves"],
+      ans: 1, hint: "It's measured in kilograms.",
+      why: "Mass is the amount of matter in an object, measured in kilograms (kg)." },
+    { t: "Two cargo carts in the loading bay. One is empty. One is packed with ore.",
+      q: "Both carts get the <strong>same push</strong>. Which one has the greater change in velocity?",
+      opts: ["The full cart", "The empty cart", "They change the same amount", "Neither one moves"],
+      ans: 1, hint: "Which cart would be easier to get moving?",
+      why: "Same force, less mass, bigger change in velocity. The empty cart speeds up more." },
+    { t: "Alert: a pod returning from the asteroid belt is not slowing down like it should.",
+      q: "Its thrusters fired with the <strong>same force</strong> as every other pod, but it slowed down less. What is most likely different about this pod?",
+      opts: ["Its thrusters pointed the wrong way", "It's carrying asteroids, so it has more mass", "It's moving in a different direction", "Its thrusters are broken"],
+      ans: 1, hint: "What did the pod pick up out in the asteroid belt?",
+      why: "The asteroids added mass, so the normal thruster force caused a smaller change in velocity." },
+    { t: "A heavy cargo hauler and a tiny scout pod are both closing in at the same speed.",
+      q: "Both are moving at <strong>15 m/s</strong> and both need to stop. Which one needs a <strong>stronger force</strong> to stop?",
+      opts: ["The scout pod", "The cargo hauler", "Same force, because they're the same speed", "Neither needs a force to stop"],
+      ans: 1, hint: "They need the same change in velocity. Which one is harder to change?",
+      why: "Both need to go from 15 m/s to 0. The object with more mass needs a stronger force to get that same change." },
+    { t: "The cargo log has a column for each pod's mass.",
+      q: "Which unit is used to measure <strong>mass</strong>?",
+      opts: ["Meters per second (m/s)", "Kilograms (kg)", "Seconds (s)", "Meters (m)"],
+      ans: 1, hint: "m/s measures velocity. What's left?",
+      why: "Mass is measured in kilograms (kg). Velocity is measured in meters per second (m/s)." },
+    { t: "Two pods sit still in the bay. Pod A is <strong>50 kg</strong>. Pod B is <strong>500 kg</strong>.",
+      q: "Both pods fire thrusters with the <strong>same force</strong>. Which one ends up with the greater velocity?",
+      opts: ["Pod A (50 kg)", "Pod B (500 kg)", "Both end up the same", "Neither one moves"],
+      ans: 0, hint: "Same force. Is less mass easier or harder to change?",
+      why: "Same force, less mass, greater change in velocity. The 50 kg pod speeds up more." },
+    { t: "A pod drops off its asteroid cargo at the station.",
+      q: "On its next trip, it fires the <strong>same thrusters</strong> with no cargo. Compared to before, its change in velocity will be:",
+      opts: ["Greater, because it has less mass now", "Smaller, because it has less mass now", "Exactly the same", "Zero"],
+      ans: 0, hint: "Dropping off cargo changes the pod's mass. Which way?",
+      why: "With less mass, the same force causes a greater change in velocity." },
+    { t: "Pod A has a mass of <strong>100 kg</strong>. Pod B has a mass of <strong>200 kg</strong>.",
+      q: "Both fire the <strong>same thruster force</strong>. Pod A slows down by 4 m/s. How much does Pod B slow down?",
+      opts: ["More than 4 m/s", "Exactly 4 m/s", "Less than 4 m/s", "It doesn't slow down at all"],
+      ans: 2, hint: "Pod B has more mass. Does the same force change it more or less?",
+      why: "Pod B has more mass, so the same force causes a smaller change in velocity. It slows down by less than 4 m/s." },
+    { t: "Mission control wants a quick summary of what you've learned.",
+      q: "An object's change in velocity depends on which <strong>two</strong> things?",
+      opts: ["Its color and its size", "The strength of the force and the object's mass", "Its speed and its color", "The time of day and its direction"],
+      ans: 1, hint: "One idea is from Chapter 1. The other is from Chapter 2.",
+      why: "Chapter 1: a stronger force causes a bigger change. Chapter 2: more mass means a smaller change from the same force." },
+    { t: "An astronaut wants a <strong>heavy</strong> tool cart and a <strong>light</strong> tool cart to both speed up from 0 to 3 m/s.",
+      q: "Which cart needs the <strong>stronger push</strong>?",
+      opts: ["The light cart", "The heavy cart", "They need the same push", "Neither needs a push"],
+      ans: 1, hint: "Both need the same change in velocity. Which is harder to change?",
+      why: "To get the same change in velocity, an object with more mass needs a stronger force." }
+  ],
+  [ // ---------- Chapter 3: Collisions ----------
+    { t: "Collision training. Bumps happen during docking.",
+      q: "When two objects collide, how many forces are exerted?",
+      opts: ["One, on the object that got hit", "One, on the object that did the hitting", "Two, one on each object", "None, unless one object is still"],
+      ans: 2, hint: "Does only one of the objects feel the bump?",
+      why: "In a collision, each object exerts a force on the other. That's two forces, one on each object." },
+    { t: "Two maintenance carts just bumped in the hallway.",
+      q: "Which direction do the two collision forces point?",
+      opts: ["The same direction", "Opposite directions", "Both point up", "It depends on which cart was faster"],
+      ans: 1, hint: "Picture the two carts. Which way does each one get pushed?",
+      why: "The two forces in a collision always point in opposite directions." },
+    { t: "In the crew lounge, someone is bowling. The ball sends a pin flying.",
+      q: "Which force is stronger: the force on the <strong>pin</strong> or the force on the <strong>ball</strong>?",
+      opts: ["The force on the pin", "The force on the ball", "They are equal in strength", "Whichever object has more mass"],
+      ans: 2, hint: "Collision forces always come as a matched pair.",
+      why: "Collision forces are equal in strength. The pin flies off because it has much less mass, not because it got a bigger force." },
+    { t: "Warning: the incoming pod bumped the station's docking arm.",
+      q: "The pod (small mass) and the station (huge mass) collide. Which one has the <strong>greater change in velocity</strong>?",
+      opts: ["The station, because it got hit", "The pod, because it has less mass", "They change the same amount", "Neither, because the forces cancel out"],
+      ans: 1, hint: "The forces are equal. Which object is easier to change?",
+      why: "The forces are equal and opposite, but the pod has much less mass, so its velocity changes much more than the station's." },
+    { t: "Vocabulary check from the training manual.",
+      q: "What is a <strong>collision</strong>?",
+      opts: ["When an object stops on its own", "When two objects make contact and exert forces on each other", "When an object speeds up", "When an object has no mass"],
+      ans: 1, hint: "It always involves two objects.",
+      why: "A collision is when two objects make contact and exert forces on each other." },
+    { t: "During a game in the rec room, a tennis ball smacks into a soccer ball.",
+      q: "How does the force on the tennis ball compare to the force on the soccer ball?",
+      opts: ["The force on the tennis ball is stronger", "The force on the soccer ball is stronger", "The forces are equal in strength", "Only the soccer ball feels a force"],
+      ans: 2, hint: "It doesn't matter which ball is bigger. Collision forces come in a matched pair.",
+      why: "In every collision, the two forces are equal in strength and opposite in direction." },
+    { t: "On a supply run back on Earth, a bug splats on a truck's windshield.",
+      q: "Which statement is true about this collision?",
+      opts: ["The truck exerts a bigger force on the bug", "The forces are equal, but the bug's velocity changes much more", "The bug exerts a bigger force on the truck", "Only the bug feels a force"],
+      ans: 1, hint: "Forces in a collision are always equal. Which object has less mass?",
+      why: "The forces are equal and opposite. The bug has much less mass, so its velocity changes a lot. The truck barely changes." },
+    { t: "Two identical carts (same mass) roll toward each other and collide.",
+      q: "How do their changes in velocity compare?",
+      opts: ["The faster cart changes more", "They change by the same amount", "The slower cart changes more", "Neither cart changes"],
+      ans: 1, hint: "Equal forces. Same mass. What does that mean for their changes?",
+      why: "Equal forces on equal masses cause equal changes in velocity, just in opposite directions." },
+    { t: "Mission control asks a tough one.",
+      q: "The forces in a collision are equal. So why do the two objects often move so differently afterward?",
+      opts: ["Because one force is secretly stronger", "Because the objects have different masses", "Because the forces point the same way", "Because one object didn't feel a force"],
+      ans: 1, hint: "The forces are the same. What else from this unit affects change in velocity?",
+      why: "Equal forces cause different changes in velocity when the objects have different masses. Less mass means more change." },
+    { t: "A small pod bumps the space station. Afterward, the station barely moves.",
+      q: "Why did the station's velocity barely change?",
+      opts: ["The pod didn't exert any force on it", "The station has a huge mass, so the same strength force changes it very little", "The force on the station was weaker", "The station was already moving fast"],
+      ans: 1, hint: "The force on the station was the same strength as the force on the pod.",
+      why: "The forces were equal. The station has a huge mass, so that force causes only a tiny change in its velocity." }
+  ],
+  [ // ---------- Test prep: Read the Data ----------
+    { t: "Sensor check.",
+      q: "Which cart's velocity changed, showing that a force acted on it?",
+      diagram: [ { name: "Cart A", before: 3, after: 3 }, { name: "Cart B", before: 0, after: 4 }, { name: "Cart C", before: 6, after: 6 } ],
+      opts: ["Cart A", "Cart B", "Cart C", "All three"],
+      ans: 1, hint: "Compare the before and after numbers for each cart.",
+      why: "Only Cart B's velocity changed (0 → 4 m/s). A change in velocity is evidence that a force acted on it." },
+    { t: "Three scout pods with the same mass flew through a debris field.",
+      q: "All three pods have the <strong>same mass</strong>. Which one experienced the <strong>strongest force</strong>?",
+      diagram: [ { name: "Pod X", before: 2, after: 5 }, { name: "Pod Y", before: 8, after: 2 }, { name: "Pod Z", before: 0, after: 4 } ],
+      opts: ["Pod X", "Pod Y", "Pod Z", "They all experienced the same force"],
+      ans: 1, hint: "Find how much each pod changed, not which one ended fastest.",
+      why: "X changed 3, Y changed 6, Z changed 4. Y slowed down, but it had the biggest change, so it had the strongest force." },
+    { t: "Two supply capsules were launched by the same launcher. One is 2 kg and one is 10 kg, but the labels fell off.",
+      q: "Both capsules got the <strong>same force</strong>. Which one is the <strong>2 kg</strong> capsule?",
+      diagram: [ { name: "Capsule 1", note: "mass: ?", before: 0, after: 1 }, { name: "Capsule 2", note: "mass: ?", before: 0, after: 5 } ],
+      opts: ["Capsule 1 (sped up 1 m/s)", "Capsule 2 (sped up 5 m/s)", "Both could be 2 kg", "There's no way to tell"],
+      ans: 1, hint: "Same force. Does less mass change more or less?",
+      why: "Same force, less mass, bigger change in velocity. The 2 kg capsule is the one that sped up 5 m/s." },
+    { t: "Two test balls collided in the lab.",
+      q: "Which ball had the greater change in velocity, and how do the forces on them compare?",
+      diagram: [ { name: "Ball A", note: "1 kg", before: 6, after: -3 }, { name: "Ball B", note: "3 kg", before: 0, after: 3 } ],
+      opts: ["Ball B, and the force on B was stronger", "Ball A, and the forces were equal", "Ball A, and the force on A was stronger", "Same change, and the forces were equal"],
+      ans: 1, hint: "Ball A went from positive to negative. Count its whole change. Then remember what's always true about collision forces.",
+      why: "Ball A went from 6 to −3, a change of 9 m/s. Ball B changed 3 m/s. The forces were equal and opposite, but A has less mass, so it changed more." },
+    { t: "Three repair drones, all the same mass, got bumped by space debris.",
+      q: "Which drone experienced the <strong>weakest force</strong>?",
+      diagram: [ { name: "Drone P", before: 4, after: 9 }, { name: "Drone Q", before: 10, after: 8 }, { name: "Drone R", before: 0, after: 6 } ],
+      opts: ["Drone P", "Drone Q", "Drone R", "They all experienced the same force"],
+      ans: 1, hint: "Find the smallest change, not the smallest final speed.",
+      why: "P changed 5, Q changed 2, R changed 6. Q had the smallest change in velocity, so it had the weakest force." },
+    { t: "Tracking data from three cargo pods.",
+      q: "Which pod <strong>changed direction</strong>?",
+      diagram: [ { name: "Pod A", before: 5, after: 2 }, { name: "Pod B", before: 4, after: -3 }, { name: "Pod C", before: 0, after: 3 } ],
+      opts: ["Pod A", "Pod B", "Pod C", "None of them"],
+      ans: 1, hint: "Look for a velocity that switched from positive to negative.",
+      why: "Pod B went from +4 to −3. The sign flipped, which means it is now moving the opposite way." },
+    { t: "Navigation log for one pod.",
+      q: "What was this pod's total <strong>change in velocity</strong>?",
+      diagram: [ { name: "Pod", before: 7, after: -2 } ],
+      opts: ["2 m/s", "5 m/s", "7 m/s", "9 m/s"],
+      ans: 3, hint: "Count from 7 down to 0, then from 0 to −2.",
+      why: "7 down to 0 is 7 m/s. 0 to −2 is 2 more. 7 + 2 = 9 m/s." },
+    { t: "Three pods, all starting at rest, fired the <strong>same thruster force</strong>.",
+      q: "Which statement does this data support?",
+      diagram: [ { name: "Pod 1", note: "50 kg", before: 0, after: 8 }, { name: "Pod 2", note: "100 kg", before: 0, after: 4 }, { name: "Pod 3", note: "200 kg", before: 0, after: 2 } ],
+      opts: ["More mass means a bigger change in velocity", "More mass means a smaller change in velocity", "Mass does not affect change in velocity", "The heaviest pod got the strongest force"],
+      ans: 1, hint: "As the mass goes up, what happens to the after velocity?",
+      why: "Same force, but as mass doubled, the change in velocity got smaller. More mass means a smaller change." },
+    { t: "Two carts with the <strong>same mass</strong> collided in the lab.",
+      q: "What does this data show?",
+      diagram: [ { name: "Cart A", note: "2 kg", before: 4, after: 0 }, { name: "Cart B", note: "2 kg", before: 0, after: 4 } ],
+      opts: ["Cart A got a stronger force", "Cart B got a stronger force", "Equal forces on equal masses caused equal changes in velocity", "Only Cart B felt a force"],
+      ans: 2, hint: "How much did each cart change? Compare their masses.",
+      why: "Each cart changed by 4 m/s. Equal forces on equal masses cause equal changes, in opposite directions." },
+    { t: "Two practice balls with the <strong>same mass</strong> were each hit once.",
+      q: "Which ball was hit with the <strong>stronger force</strong>?",
+      diagram: [ { name: "Ball 1", before: 0, after: 2 }, { name: "Ball 2", before: 0, after: 8 } ],
+      opts: ["Ball 1", "Ball 2", "They were hit with the same force", "There's no way to tell"],
+      ans: 1, hint: "Same mass. Which one had the bigger change?",
+      why: "With the same mass, the stronger force causes the bigger change. Ball 2 changed 8 m/s, Ball 1 only 2 m/s." }
+  ]
+];
+
+const TOTAL = SECTORS.length * PER_SECTOR;
+const STORE = "dock-the-pod-solo-v2";
+let st = load() || { name: "", picks: null, lastPicks: null, i: 0, first: [], started: null, done: null, flown: 0, best: 0 };
+let triedWrong = false;
+
+function load() { try { return JSON.parse(localStorage.getItem(STORE)); } catch (e) { return null; } }
+function save() { try { localStorage.setItem(STORE, JSON.stringify(st)); } catch (e) {} }
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+// Draw PER_SECTOR questions per sector, putting last mission's questions at the back of the line.
+function drawMission() {
+  const last = new Set((st.lastPicks || []).map(p => p.join("-")));
+  const picks = [];
+  BANK.forEach((bank, s) => {
+    const idx = shuffle(bank.map((_, k) => k));
+    const fresh = idx.filter(k => !last.has(s + "-" + k));
+    const seen = idx.filter(k => last.has(s + "-" + k));
+    fresh.concat(seen).slice(0, PER_SECTOR).forEach(k => picks.push([s, k]));
+  });
+  return picks;
+}
+const cur = i => { const [s, k] = st.picks[i]; return { s, ...BANK[s][k] }; };
+
+/* HUD */
+(function ticks() {
+  const g = $("ticks");
+  for (let k = 0; k <= TOTAL; k++) {
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", 30 + (670 * k) / TOTAL); c.setAttribute("cy", 32); c.setAttribute("r", 2.5); c.setAttribute("fill", "var(--line)");
+    g.appendChild(c);
+  }
+})();
+function updateHud() {
+  const step = Math.min(st.i, TOTAL);
+  $("hud").hidden = false;
+  if (step < TOTAL) { const sec = SECTORS[cur(step).s]; $("hudSector").textContent = `${sec.ch} · ${sec.name}`; }
+  else $("hudSector").textContent = "Docked";
+  $("hudStep").textContent = `${Math.min(step + 1, TOTAL)} / ${TOTAL}`;
+  $("hudScore").textContent = st.first.filter(Boolean).length;
+  $("pod").setAttribute("transform", `translate(${30 + (670 * step) / TOTAL} 32)`);
+}
+
+/* Screens */
+function startScreen() {
+  $("hud").hidden = true;
+  const returning = st.flown > 0;
+  $("screen").innerHTML = `
+    <span class="eyebrow">Orbital Station Kestrel · Docking Control</span>
+    <h1>Dock the Pod</h1>
+    <p class="lead">A cargo pod is coming home from the asteroid belt, and you're the new docking officer. Every question you answer brings the pod one step closer to the station.</p>
+    <p class="lead muted">Get one wrong and mission control sends a hint so you can try again. Answer right on the first try to earn a <b>clean dock</b>. Each mission pulls ${TOTAL} checks from a bank of ${BANK.flat().length}, so every flight is different.</p>
+    <div class="sectors">${SECTORS.map(s => `<div class="sector"><div class="ch">${s.ch}</div><div class="nm">${s.name}</div></div>`).join("")}</div>
+    ${returning ? `<p class="stamp">Missions flown: ${st.flown} · Best: ${st.best} / ${TOTAL} clean docks</p>` : ""}
+    <div class="field"><label>Your call sign</label><div class="callsign" id="callsign">${esc(st.name)}</div></div>
+    <div class="row"><button class="btn ghost" id="reroll">New call sign</button><button class="btn" id="go">${returning ? "Start a new mission" : "Begin mission"}</button></div>`;
+  $("reroll").onclick = () => { st.name = callSign(); save(); $("callsign").textContent = st.name; };
+  $("go").onclick = () => {
+    st.picks = drawMission(); st.i = 0; st.first = []; st.started = Date.now(); st.done = null;
+    save(); showQ();
+  };
+}
+
+// Students get an assigned call sign instead of typing a name.
+const CS_A = ["Comet", "Nova", "Orbit", "Vector", "Rocket", "Meteor", "Quasar", "Lunar", "Solar", "Nebula", "Photon", "Galaxy", "Pulsar", "Zenith", "Astro", "Ion"];
+const CS_B = ["Falcon", "Fox", "Hawk", "Otter", "Lynx", "Wolf", "Tiger", "Raven", "Bear", "Owl", "Panda", "Shark", "Eagle", "Cobra", "Moose", "Gecko"];
+function callSign() {
+  const r = a => a[Math.floor(Math.random() * a.length)];
+  return `${r(CS_A)} ${r(CS_B)} ${10 + Math.floor(Math.random() * 90)}`;
+}
+if (!st.name || !/^[A-Z][a-z]+ [A-Z][a-z]+ \d{2}$/.test(st.name)) { st.name = callSign(); save(); }
+
+function bar(v, max) {
+  if (v === 0) return "";
+  const pct = Math.min(Math.abs(v) / max, 1) * 50;
+  return `<div class="bar ${v < 0 ? "neg" : ""}" style="${v > 0 ? "left" : "right"}:50%;width:${pct}%"></div>`;
+}
+function diagramHTML(rows) {
+  const max = Math.max(...rows.flatMap(r => [Math.abs(r.before), Math.abs(r.after)]), 1);
+  return `<div class="diagram"><table><thead><tr><th>Object</th><th>Before</th><th>After</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td class="obj">${r.name}${r.note ? `<small>${r.note}</small>` : ""}</td>
+      <td><div class="vel"><div class="track">${bar(r.before, max)}</div><span>${r.before} m/s</span></div></td>
+      <td><div class="vel"><div class="track">${bar(r.after, max)}</div><span>${r.after} m/s</span></div></td></tr>`).join("")
+  }</tbody></table><div class="legend">Bars right of the center line are positive velocity. Bars left of it are negative (moving the other way).</div></div>`;
+}
+
+function showQ() {
+  if (st.i >= TOTAL) return report();
+  updateHud();
+  const item = cur(st.i);
+  const newSector = st.i % PER_SECTOR === 0;
+  const sec = SECTORS[item.s];
+  triedWrong = false;
+  const order = shuffle(item.opts.map((_, k) => k));
+  $("screen").innerHTML = `
+    ${newSector ? `<div class="sector-banner"><span class="eyebrow">Entering ${sec.ch}</span><span class="nm">${sec.name}</span><span class="muted">${sec.intro}</span></div>` : ""}
+    <p class="transmission">${item.t}</p>
+    <p class="q">${item.q}</p>
+    ${item.diagram ? diagramHTML(item.diagram) : ""}
+    <div class="opts">${order.map((k, pos) =>
+      `<button class="opt" data-k="${k}"><b>${"ABCD"[pos]}</b><span>${item.opts[k]}</span></button>`).join("")}</div>
+    <div id="fb"></div>
+    <div class="row" id="next" hidden><button class="btn" id="nextBtn">${st.i === TOTAL - 1 ? "Dock the pod" : "Next transmission"}</button></div>`;
+  document.querySelectorAll(".opt").forEach(b => b.onclick = () => pick(+b.dataset.k, b));
+  const first = document.querySelector(".opt"); if (first) first.focus({ preventScroll: true });
+  window.scrollTo({ top: 0 });
+}
+
+function pick(k, btn) {
+  const item = cur(st.i);
+  if (k === item.ans) {
+    if (st.first[st.i] == null) st.first[st.i] = !triedWrong;
+    save();
+    document.querySelectorAll(".opt").forEach(b => b.disabled = true);
+    btn.classList.add("right");
+    $("fb").innerHTML = `<div class="feedback good"><span class="lbl">${triedWrong ? "Course corrected" : "Clean dock"}</span>${item.why}</div>`;
+    $("next").hidden = false;
+    $("nextBtn").onclick = () => { st.i++; save(); showQ(); };
+    $("nextBtn").focus();
+    updateHud();
+  } else {
+    triedWrong = true;
+    btn.classList.add("wrong");
+    btn.disabled = true;
+    $("fb").innerHTML = `<div class="feedback hint"><span class="lbl">Off course · Hint from mission control</span>${item.hint}</div>`;
+  }
+}
+
+function report() {
+  const clean = st.first.filter(Boolean).length;
+  if (!st.done) {
+    st.done = Date.now(); st.flown = (st.flown || 0) + 1; st.best = Math.max(st.best || 0, clean); st.lastPicks = st.picks;
+    save();
+  }
+  updateHud();
+  const per = SECTORS.map((s, si) => {
+    const idx = st.picks.map((p, k) => p[0] === si ? k : -1).filter(k => k >= 0);
+    return { ...s, got: idx.filter(k => st.first[k]).length, of: idx.length };
+  });
+  const mins = st.started ? Math.max(1, Math.round((st.done - st.started) / 60000)) : null;
+  const weakest = per.slice().sort((a, b) => a.got / a.of - b.got / b.of)[0];
+  const when = new Date(st.done).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  $("screen").innerHTML = `
+    <span class="eyebrow">Mission report · Show this screen to your teacher</span>
+    <h2>Pod docked, Officer ${esc(st.name)}.</h2>
+    <div class="row" style="align-items:end;gap:16px">
+      <div class="big-score">${clean}<span style="font-size:.45em;color:var(--muted)"> / ${TOTAL}</span></div>
+      <div class="muted">clean docks<br>(right on the first try)</div>
+    </div>
+    <div class="sectors">${per.map(p => `<div class="sector"><div class="ch">${p.ch}</div><div class="nm">${p.name}</div><div class="sc">${p.got}<small> / ${p.of}</small></div></div>`).join("")}</div>
+    <p class="lead">${clean === TOTAL ? "Perfect run. You're ready for the test." : `Your best review spot before the test: <b>${weakest.name}</b> (${weakest.ch}). Fly again for a new set of questions.`}</p>
+    <p class="stamp">Mission #${st.flown} · Completed ${when}${mins ? ` · ${mins} min` : ""} · Best: ${st.best} / ${TOTAL}</p>
+    <div class="row"><button class="btn" id="again">Fly a new mission</button></div>`;
+  $("again").onclick = () => {
+    st.picks = drawMission(); st.i = 0; st.first = []; st.started = Date.now(); st.done = null;
+    save(); showQ();
+  };
+}
+
+/* Starfield */
+(function stars() {
+  const c = $("stars"), x = c.getContext("2d");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let pts = [];
+  function size() {
+    c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+    pts = Array.from({ length: 140 }, () => ({ x: Math.random() * c.width, y: Math.random() * c.height, r: Math.random() * 1.4 + .3, v: Math.random() * .25 + .05 }));
+  }
+  function draw() {
+    x.clearRect(0, 0, c.width, c.height);
+    x.fillStyle = "#c9d6ff";
+    pts.forEach(p => { x.globalAlpha = .3 + p.r / 3; x.beginPath(); x.arc(p.x, p.y, p.r * devicePixelRatio, 0, 7); x.fill(); if (!reduce) { p.x -= p.v * devicePixelRatio; if (p.x < 0) p.x = c.width; } });
+    if (!reduce) requestAnimationFrame(draw);
+  }
+  addEventListener("resize", () => { size(); if (reduce) draw(); });
+  size(); draw();
+})();
+
+/* Boot: resume where the student left off */
+if (st.done && st.picks) report();
+else if (st.started && st.picks) showQ();
+else startScreen();
+</script>
+</body>
+</html>
